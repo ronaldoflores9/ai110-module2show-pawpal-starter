@@ -25,8 +25,19 @@ The design separates data (Owner, Pet, Task) from scheduling logic (Scheduler) a
 
 **b. Design changes**
 
-- Did your design change during implementation?
-- If yes, describe at least one change and why you made it.
+Yes, the design evolved after reviewing AI feedback on the initial skeleton. The following changes were made:
+
+1. **Converted classes to Python dataclasses** — `Owner`, `Pet`, `Task`, `ScheduledTask`, and `DailyPlan` were refactored from manual `__init__` methods to `@dataclass` decorators. This eliminated boilerplate and made the field definitions cleaner and easier to read. `field(default_factory=list)` was used for mutable defaults like `preferences`, `scheduled_tasks`, and `skipped_tasks`.
+
+2. **Added a `Priority` enum** — The `priority` field on `Task` was originally a plain string (`"low"`, `"medium"`, `"high"`) with no validation. AI feedback flagged this as a potential source of silent bugs when sorting. A `Priority(str, Enum)` class was added to enforce valid values at the type level.
+
+3. **Split `Scheduler.generate_plan()` into private helper stubs** — AI feedback identified that putting all scheduling logic into one method would become a bottleneck and be hard to test. The method was decomposed into `_sort_tasks()` and `_allocate()` stubs to keep responsibilities separated and make future testing easier.
+
+4. **Added `Task.species` field** — The original `Task` had no way to indicate which pet species it applied to. AI feedback flagged that the scheduler had no basis to filter tasks by pet type. A `species: list[str]` field was added; an empty list means the task applies to all species, and `_filter_by_species()` in the `Scheduler` handles the filtering.
+
+5. **Added `DailyPlan.owner` property** — The original design required chaining `plan.pet.owner` to access owner constraints. A `@property` was added to `DailyPlan` to expose the owner directly, making the relationship explicit and access cleaner.
+
+6. **Added time parsing helpers to `Scheduler`** — `start_time` was a plain string with no parsing logic anywhere. AI feedback flagged this as a likely source of bugs. Two private methods, `_parse_time()` and `_format_time()`, were added to centralize all `"HH:MM"` arithmetic in one place.
 
 ---
 
