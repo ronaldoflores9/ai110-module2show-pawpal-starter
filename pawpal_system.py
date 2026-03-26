@@ -168,7 +168,7 @@ class Scheduler:
             frequency=task.frequency,
             is_completed=False,
             scheduled_time=task.scheduled_time,
-            last_completed_date="",
+            last_completed_date=task.last_completed_date,
         )
         pet.add_task(next_task)
         return next_task
@@ -176,9 +176,18 @@ class Scheduler:
     def sort_by_time(self, tasks: list[Task]) -> list[Task]:
         """Order tasks by their explicit time hints.
 
-        Tasks with a valid `scheduled_time` are sorted lexicographically in
-        HH:MM order. Tasks without a time hint are pushed to the end using a
-        sentinel value, preserving deterministic output for UI rendering.
+        Uses Python's sorted() with a lambda as the key function.
+        The lambda extracts each task's scheduled_time string ("HH:MM").
+        Because "HH:MM" strings sort correctly in lexicographic order
+        (e.g. "06:45" < "07:30" < "08:00"), no time parsing is needed.
+        Tasks without a time hint receive the sentinel "99:99" so they
+        sort to the end, preserving deterministic output for UI rendering.
+
+        Example:
+            key=lambda task: task.scheduled_time or "99:99"
+            "06:45" → sorts first
+            "08:00" → sorts after "07:30"
+            ""      → becomes "99:99", sorts last
         """
         return sorted(
             tasks,
@@ -236,12 +245,18 @@ class Scheduler:
         return results
 
     def detect_conflicts(self, plans: list[DailyPlan]) -> list[tuple[ScheduledTask, Pet, ScheduledTask, Pet]]:
-        """Find all overlapping scheduled windows across one or more plans.
+        """Detect overlapping scheduled windows across one or more plans.
 
-        Each result tuple is `(task_a, pet_a, task_b, pet_b)`. The algorithm
-        flattens all scheduled tasks, then checks each unique pair once.
-        Overlap is detected with interval logic:
-            `start_a < end_b and start_b < end_a`.
+        Args:
+            plans: Daily plans whose ScheduledTask windows should be compared.
+
+        Returns:
+            A list of conflict tuples in the form
+            (scheduled_task_a, pet_a, scheduled_task_b, pet_b).
+
+        Notes:
+            Uses pairwise interval overlap logic:
+            start_a < end_b and start_b < end_a.
         """
         all_items: list[tuple[ScheduledTask, Pet]] = [
             (st, plan.pet)
@@ -261,10 +276,18 @@ class Scheduler:
         return conflicts
 
     def get_conflict_warnings(self, plans: list[DailyPlan]) -> list[str]:
-        """Lightweight wrapper: return human-readable warning strings for every conflict.
+        """Build user-facing warning messages from detected scheduling conflicts.
 
-        Never raises — always returns a (possibly empty) list of strings so the
-        caller can print or display them without risk of crashing.
+        Args:
+            plans: Daily plans to scan for overlaps.
+
+        Returns:
+            A list of warning strings. The list is empty when no conflicts are
+            found.
+
+        Notes:
+            This method is intentionally lightweight and non-throwing so callers
+            can safely print warnings without interrupting the app flow.
         """
         warnings: list[str] = []
         for st_a, pet_a, st_b, pet_b in self.detect_conflicts(plans):
@@ -278,15 +301,19 @@ class Scheduler:
         return warnings
 
     def check_time_hint_conflicts(self, owner: Owner) -> list[str]:
-        """Validate user-provided time hints before schedule allocation.
+        """Check pinned task time hints for overlaps before allocation.
 
-        This preflight pass detects overlapping pinned windows by treating each
-        hint as an interval `[scheduled_time, scheduled_time + duration)` and
-        comparing unique pairs. It is useful because sequential allocation can
-        mask original same-pet conflicts by shifting later tasks forward.
+        Args:
+            owner: Owner whose pets and incomplete pinned tasks are validated.
 
-        Only incomplete tasks with a non-empty `scheduled_time` are checked.
-        Returns human-readable warnings and never raises.
+        Returns:
+            A list of warning strings describing pre-schedule conflicts.
+
+        Notes:
+            This preflight check treats each pinned task as the interval
+            [scheduled_time, scheduled_time + duration). It helps surface intent
+            conflicts that greedy allocation might otherwise mask by shifting
+            later tasks forward.
         """
         # Build a flat list of (pet, task) for tasks that have a scheduled_time
         pinned: list[tuple[Pet, Task]] = [

@@ -6,16 +6,17 @@
 
 The initial UML design for PawPal+ includes 6 classes organized around the core concept of generating a personalized daily care schedule for a pet.
 
-| Class | Responsibilities |
-|---|---|
-| **Owner** | Stores the owner's name, available time (in minutes), and scheduling preferences |
-| **Pet** | Represents the animal being cared for — holds its name, species, and a reference to its owner |
-| **Task** | Defines a single care activity with a title, duration, priority, category, and whether it's required |
-| **ScheduledTask** | Wraps a `Task` with a concrete start/end time and a reason for its placement in the schedule |
-| **DailyPlan** | Aggregates the full schedule for a pet — holds the list of scheduled and skipped tasks, total time used, and a summary |
-| **Scheduler** | The logic class — takes a pet and a list of tasks and produces a `DailyPlan` via `generate_plan()` |
+| Class             | Responsibilities                                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Owner**         | Stores the owner's name, available time (in minutes), and scheduling preferences                                       |
+| **Pet**           | Represents the animal being cared for — holds its name, species, and a reference to its owner                          |
+| **Task**          | Defines a single care activity with a title, duration, priority, category, and whether it's required                   |
+| **ScheduledTask** | Wraps a `Task` with a concrete start/end time and a reason for its placement in the schedule                           |
+| **DailyPlan**     | Aggregates the full schedule for a pet — holds the list of scheduled and skipped tasks, total time used, and a summary |
+| **Scheduler**     | The logic class — takes a pet and a list of tasks and produces a `DailyPlan` via `generate_plan()`                     |
 
 Key relationships:
+
 - An `Owner` owns one `Pet`
 - A `Task` becomes a `ScheduledTask` when placed in the plan
 - A `DailyPlan` contains many `ScheduledTask`s and tracks skipped `Task`s
@@ -50,16 +51,13 @@ Yes, the design evolved after reviewing AI feedback on the initial skeleton. The
 
 **b. Tradeoffs**
 
-**Tradeoff: Greedy allocation silently resolves same-pet time conflicts instead of rejecting them**
+**Tradeoff: Keep explicit pairwise overlap checks (readability) instead of a denser "more Pythonic" one-liner**
 
-The `_allocate` method processes tasks one at a time in sorted order (pinned times first, then required, then priority). When two tasks on the same pet share the same `scheduled_time` — say, both Mochi's "Morning walk" and "Vet appointment" are pinned to `08:00` — the allocator places the first task at `08:00` and then, because the wall clock has moved past `08:00`, simply starts the second task immediately after. No warning is raised inside the plan itself; the second task quietly loses its requested slot.
+I reviewed `detect_conflicts()` with Copilot and asked how it could be simplified for readability or performance. One suggestion was to compress the nested loops into a compact expression (for example, using `itertools.combinations` plus inline overlap checks in one statement). That version is shorter and arguably more Pythonic, but it is harder for a beginner to step through and debug.
 
-This means the final `DailyPlan` always looks clean and conflict-free for a single pet, even when the owner's original intent was impossible to honor. The conflict only surfaces in `check_time_hint_conflicts`, which runs as a separate pre-schedule pass.
+I decided to keep the current explicit loop version because this project prioritizes clarity over micro-optimizations. The current implementation makes each step obvious: flatten scheduled tasks, compare each unique pair once, parse intervals, then apply overlap logic.
 
-**Why this is reasonable for this scenario:**
-A scheduling app aimed at busy pet owners should never refuse to produce a plan. Crashing or blocking on a time conflict would be worse than silently bumping a task forward — the owner still gets a usable schedule. The pre-schedule warning system provides the transparency without making the scheduler fragile. The tradeoff is that an owner who ignores the pre-schedule warnings won't realize a task missed its slot just by reading the final plan.
-
-A future improvement would be adding a `reason` value like `"requested 08:00 — moved to 08:30 due to conflict"` to the `ScheduledTask` entry so the override is visible in the plan itself.
+The performance tradeoff is that conflict detection is still $O(n^2)$ in the number of scheduled items. For this assignment-sized scheduler, that cost is acceptable. If this system grew to many pets and many tasks, a sweep-line or sorted-interval approach could reduce comparisons while keeping warnings non-blocking.
 
 ---
 

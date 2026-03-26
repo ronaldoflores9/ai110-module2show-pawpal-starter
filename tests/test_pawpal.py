@@ -69,3 +69,60 @@ def test_mark_task_complete_does_not_create_new_for_as_needed():
     assert task.is_completed is True
     assert next_task is None
     assert len(pet.tasks) == 1
+
+
+def test_check_time_hint_conflicts_returns_warning_for_same_time_same_pet():
+    owner = make_owner()
+    pet = make_pet(owner)
+    scheduler = Scheduler()
+
+    pet.add_task(
+        Task(
+            title="Breakfast",
+            duration_minutes=15,
+            priority=Priority.HIGH,
+            scheduled_time="08:00",
+        )
+    )
+    pet.add_task(
+        Task(
+            title="Medication",
+            duration_minutes=10,
+            priority=Priority.HIGH,
+            scheduled_time="08:00",
+        )
+    )
+    owner.add_pet(pet)
+
+    warnings = scheduler.check_time_hint_conflicts(owner)
+
+    assert warnings
+    assert any("SAME-PET" in warning for warning in warnings)
+
+
+def test_check_time_hint_conflicts_returns_empty_when_no_overlap():
+    owner = make_owner()
+    pet = make_pet(owner)
+    scheduler = Scheduler()
+
+    pet.add_task(
+        Task(
+            title="Breakfast",
+            duration_minutes=10,
+            priority=Priority.HIGH,
+            scheduled_time="08:00",
+        )
+    )
+    pet.add_task(
+        Task(
+            title="Walk",
+            duration_minutes=20,
+            priority=Priority.MEDIUM,
+            scheduled_time="08:30",
+        )
+    )
+    owner.add_pet(pet)
+
+    warnings = scheduler.check_time_hint_conflicts(owner)
+
+    assert warnings == []

@@ -44,11 +44,10 @@ pip install -r requirements.txt
 
 ## Smarter Scheduling
 
-The scheduler now includes smarter planning features to improve daily care plans:
+The scheduler now supports smarter day planning with:
 
-- Recurrence-aware planning (`daily`, `weekly`, `as_needed`) so only due tasks are considered.
-- Species-aware filtering so a pet only gets tasks that apply to that species.
-- Priority and requirement ranking with optional pinned times (`HH:MM`) for better ordering.
-- Budget-based allocation that schedules as many tasks as possible within available owner time.
-- Conflict detection utilities that flag overlapping scheduled tasks, including pre-schedule checks for pinned time hints.
-- Flexible task views that can filter by pet, completion status, and priority.
+- Due-date aware recurrence handling (`daily`, `weekly`, `as_needed`)
+- Species filtering so each pet only receives relevant tasks
+- Priority + required-task ranking with optional pinned start times (`HH:MM`)
+- Time-budgeted allocation to fit as many tasks as possible
+- Lightweight conflict warnings (pre-schedule and post-schedule) that inform without crashing

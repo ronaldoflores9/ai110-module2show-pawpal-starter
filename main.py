@@ -3,20 +3,27 @@ from pawpal_system import Owner, Pet, Task, Priority, Scheduler
 # --- Setup ---
 owner = Owner(name="Jordan", time_available_minutes=120)
 
+# Tasks added deliberately OUT OF ORDER to demonstrate sort_by_time():
+#   Morning walk  08:00  ← added first
+#   Breakfast     07:30  ← earlier time, added second
+#   Fetch         (none) ← no time hint, added third
+#   Medication    06:45  ← earliest time, added fourth
+#   Brush coat    (none) ← weekly, no time
+#   Vet appt      08:00  ← deliberate same-time conflict with Morning walk
 mochi = Pet(name="Mochi", species="dog", owner=owner)
-mochi.add_task(Task("Morning walk",      duration_minutes=30, priority=Priority.HIGH,   is_required=True,  frequency="daily",  scheduled_time="08:00"))
-mochi.add_task(Task("Breakfast feeding", duration_minutes=10, priority=Priority.HIGH,   frequency="daily",  scheduled_time="07:30"))
+mochi.add_task(Task("Morning walk",      duration_minutes=30, priority=Priority.HIGH,   is_required=True,  frequency="daily",     scheduled_time="08:00"))
+mochi.add_task(Task("Breakfast feeding", duration_minutes=10, priority=Priority.HIGH,   frequency="daily",                         scheduled_time="07:30"))
 mochi.add_task(Task("Fetch / playtime",  duration_minutes=20, priority=Priority.MEDIUM, frequency="daily"))
-mochi.add_task(Task("Medication",        duration_minutes=5,  priority=Priority.HIGH,   frequency="daily",  scheduled_time="06:45"))
+mochi.add_task(Task("Medication",        duration_minutes=5,  priority=Priority.HIGH,   frequency="daily",                         scheduled_time="06:45"))
 mochi.add_task(Task("Brush coat",        duration_minutes=15, priority=Priority.LOW,    frequency="weekly"))
 # Deliberate same-pet conflict: Vet appointment overlaps Morning walk (both at 08:00)
-mochi.add_task(Task("Vet appointment",   duration_minutes=20, priority=Priority.HIGH,   frequency="as_needed", scheduled_time="08:00"))
+mochi.add_task(Task("Vet appointment",   duration_minutes=20, priority=Priority.HIGH,   frequency="as_needed",                     scheduled_time="08:00"))
 
 luna = Pet(name="Luna", species="cat", owner=owner)
 luna.add_task(Task("Breakfast feeding",  duration_minutes=5,  priority=Priority.HIGH,   is_required=True,  frequency="daily",  species=["cat"], scheduled_time="07:30"))
 luna.add_task(Task("Litter box clean",   duration_minutes=10, priority=Priority.HIGH,   frequency="daily",  species=["cat"]))
 luna.add_task(Task("Interactive play",   duration_minutes=15, priority=Priority.MEDIUM, frequency="daily"))
-luna.add_task(Task("Eye drops",          duration_minutes=5,  priority=Priority.HIGH,   frequency="daily",  scheduled_time="06:30"))
+luna.add_task(Task("Eye drops",          duration_minutes=5,  priority=Priority.HIGH,   frequency="daily",                      scheduled_time="06:30"))
 luna.add_task(Task("Nail trim",          duration_minutes=20, priority=Priority.LOW,    frequency="weekly"))
 
 owner.add_pet(mochi)
@@ -77,28 +84,44 @@ for plan in plans:
 total_used = sum(plan.total_minutes for plan in plans)
 print("\n" + "=" * 60)
 
-# --- Sorting demo: tasks intentionally added out of order ---
+# --- Sorting demo ---
+# Tasks were added in insertion order (08:00, 07:30, none, 06:45, none, 08:00).
+# sort_by_time() uses a lambda key: task.scheduled_time or "99:99"
+# so "HH:MM" strings sort lexicographically and tasks with no time go last.
 print("  Sorting demo: Mochi tasks sorted by HH:MM scheduled_time")
+print("  (original insertion order vs. sorted order)")
 print("=" * 60)
+print("  BEFORE (insertion order):")
+for task in mochi.tasks:
+    when = task.scheduled_time if task.scheduled_time else "(no time)"
+    print(f"    {when:>10}  {task.title}")
+
 sorted_mochi = scheduler.sort_by_time(mochi.tasks)
+print("\n  AFTER  (sorted by lambda key):")
 for task in sorted_mochi:
     when = task.scheduled_time if task.scheduled_time else "(no time)"
-    print(f"  {when} - {task.title}")
+    print(f"    {when:>10}  {task.title}")
 
-# --- New filtering demo: by completion and pet name ---
+# --- Filtering demo ---
+# filter_by_status_or_pet() accepts optional is_completed and pet_name filters.
+# Filters are cumulative (AND logic): both conditions must be satisfied.
+
 print("\n" + "=" * 60)
-print("  Filtering demo: completed tasks for Mochi")
+print("  Filtering demo 1: completed tasks for Mochi only")
 print("=" * 60)
 completed_mochi = scheduler.filter_by_status_or_pet(owner, is_completed=True, pet_name="Mochi")
-for pet, task in completed_mochi:
-    print(f"  [{pet.name}] {task.title} - completed={task.is_completed}")
+if completed_mochi:
+    for pet, task in completed_mochi:
+        print(f"  [{pet.name}] {task.title}  completed={task.is_completed}")
+else:
+    print("  (no completed tasks for Mochi)")
 
 print("\n" + "=" * 60)
-print("  Filtering demo: all pending tasks")
+print("  Filtering demo 2: all pending tasks across all pets")
 print("=" * 60)
 pending_tasks = scheduler.filter_by_status_or_pet(owner, is_completed=False)
 for pet, task in pending_tasks:
-    print(f"  [{pet.name}] {task.title} - completed={task.is_completed}")
+    print(f"  [{pet.name}] {task.title}  completed={task.is_completed}")
 
 print("\n" + "=" * 60)
 print(f"  Total time used across all pets: {total_used} / {owner.time_available_minutes} min")
@@ -125,5 +148,42 @@ print("=" * 60)
 filtered = scheduler.filter_tasks(owner, status="pending", priority="high")
 for pet, task in filtered:
     print(f"  [{pet.name}] {task.title} — {task.priority.value}, {task.frequency}")
+
+print("\n" + "=" * 60)
+
+# --- Recurring-task fix demo: last_completed_date propagation ---
+# mark_task_complete now passes task.last_completed_date (set to today by
+# mark_complete()) into the new Task, so is_due_today() sees a recent date
+# and correctly skips the new weekly occurrence until 7 days have passed.
+print("  Recurring-task fix demo: last_completed_date propagation")
+print("=" * 60)
+
+from pawpal_system import is_due_today  # noqa: E402 (local import for demo clarity)
+
+# --- Weekly task: "Brush coat" ---
+# Find the original Brush coat task (not yet completed in this demo path).
+brush_coat = next(t for t in mochi.tasks if t.title == "Brush coat" and not t.is_completed)
+next_weekly = scheduler.mark_task_complete(mochi, brush_coat)
+
+weekly_due = is_due_today(next_weekly)
+print(f"\n  Weekly task  : '{next_weekly.title}'")
+print(f"  last_completed_date on new task : '{next_weekly.last_completed_date}'")
+print(f"  is_due_today()  -> {weekly_due}")
+print(f"  Expected        -> False  (just completed; 7 days have not passed)")
+assert not weekly_due, "BUG: new weekly occurrence should NOT be due today"
+print("  PASS: new weekly occurrence is correctly NOT due today.")
+
+# --- Daily task: demonstrate that daily occurrences are always due ---
+demo_daily = Task("Demo daily walk", duration_minutes=10, priority=Priority.LOW, frequency="daily")
+mochi.add_task(demo_daily)
+next_daily = scheduler.mark_task_complete(mochi, demo_daily)
+
+daily_due = is_due_today(next_daily)
+print(f"\n  Daily task   : '{next_daily.title}'")
+print(f"  last_completed_date on new task : '{next_daily.last_completed_date}'")
+print(f"  is_due_today()  -> {daily_due}")
+print(f"  Expected        -> True  (daily tasks are always due)")
+assert daily_due, "BUG: new daily occurrence should always be due today"
+print("  PASS: new daily occurrence is correctly due today.")
 
 print("\n" + "=" * 60)
